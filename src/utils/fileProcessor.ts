@@ -115,8 +115,9 @@ async function processPDF(
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
-    // @ts-ignore
-    fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
+    // The items property exists but is not properly typed in the PDF.js types
+    const items = (textContent as { items: Array<{ str: string }> }).items;
+    fullText += items.map(item => item.str).join(' ') + '\n';
   }
 
   const cleanedText = cleanPII(fullText, options?.userStringsToObfuscate);
@@ -184,8 +185,7 @@ async function processSpreadsheet(file: File): Promise<ProcessedData> {
 
   const negociacaoSheet = workbook.SheetNames.find(name => name.toLowerCase().includes('negoci'));
   if (negociacaoSheet) {
-    // @ts-ignore
-    const data = XLSX.utils.sheet_to_json<any>(workbook.Sheets[negociacaoSheet]);
+    const data = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets[negociacaoSheet]);
     const grouped: Record<string, {
       years: Record<string, { buys: number[]; sells: number[]; buyQty: number; sellQty: number; }>;
       totalBuyQty: number;
@@ -282,8 +282,7 @@ async function processSpreadsheet(file: File): Promise<ProcessedData> {
 
   const proventosSheet = workbook.SheetNames.find(name => name.toLowerCase().includes('provento'));
   if (proventosSheet) {
-    // @ts-ignore
-    const data = XLSX.utils.sheet_to_json<any>(workbook.Sheets[proventosSheet]);
+    const data = XLSX.utils.sheet_to_json<Record<string, string>>(workbook.Sheets[proventosSheet]);
     for (const row of data) {
       const produto = row['Produto'] || row['Ativo'] || row['Código'];
       const tipoEvento = (row['Tipo de Evento'] || '').toLowerCase();
@@ -339,9 +338,12 @@ async function processSpreadsheet(file: File): Promise<ProcessedData> {
 export function generateExcelFile(data: ProcessedData): Blob {
   const workbook = XLSX.utils.book_new();
 
-  function toSheetWithColumns(rows: any[], columns: string[]) {
+  function toSheetWithColumns(rows: ProcessedDataObject[], columns: string[]) {
     const header = [columns];
-    const body = rows.map(row => columns.map(col => row[col] ?? ''));
+    const body = rows.map(row => columns.map(col => {
+      const value = row[col as keyof ProcessedDataObject];
+      return value?.toString() ?? '';
+    }));
     return XLSX.utils.aoa_to_sheet(header.concat(body));
   }
 
