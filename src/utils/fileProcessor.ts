@@ -1,3 +1,4 @@
+
 import * as XLSX from 'xlsx';
 import { getCompanyInfo } from './b3Mapping';
 
@@ -105,7 +106,7 @@ async function processPDF(
   file: File,
   options?: { saveCleanedText?: boolean; userStringsToObfuscate?: string[] }
 ): Promise<ProcessedData> {
-  const pdfjsLib = await import('pdfjs-dist');
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
   const arrayBuffer = await file.arrayBuffer();
