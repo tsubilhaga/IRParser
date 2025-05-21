@@ -1,6 +1,0 @@
-transformers
-datasets
-torch
-sentencepiece
-accelerate
-evaluate 
