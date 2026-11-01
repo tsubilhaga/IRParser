@@ -1,118 +1,25 @@
-
-function ConvertTo-Base64 {
-    param (
-        [string]$JsonString
-    )
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($JsonString)
-    return [Convert]::ToBase64String($bytes)
-}
+. "$PSScriptRoot/b3_common.ps1"
 
 function Get-CompanyDetails {
     param (
-        [string]$CodeCVM,
-        [int]$MaxRetries = 5,
-        [int]$InitialDelaySeconds = 5
+        [string]$CodeCVM
     )
 
-    $payload = @{
-        codeCVM = $CodeCVM
-        language = "pt-br"
-    } | ConvertTo-Json
-
-    $base64Payload = ConvertTo-Base64 -JsonString $payload
-
-    $url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetDetail/$base64Payload"
-
-    $retryCount = 0
-    $delaySeconds = $InitialDelaySeconds
-
-    while ($retryCount -lt $MaxRetries) {
-        try {
-            $response = Invoke-RestMethod -Uri $url -Method Get
-            
-            if ($null -eq $response) {
-                Write-Warning "Empty response received for company $($CodeCVM)"
-                return $null
-            }
-
-            return $response
-        }
-        catch {
-            $errorMessage = $_.Exception.Message
-            Write-Warning "Attempt $($retryCount + 1) of $($MaxRetries) failed for company $($CodeCVM): $errorMessage"
-            
-            if ($errorMessage -match "error code: 1015") {
-                $retryCount++
-                if ($retryCount -lt $MaxRetries) {
-                    Write-Host "Rate limit detected. Waiting $($delaySeconds) seconds before retry..."
-                    Start-Sleep -Seconds $delaySeconds
-                    $delaySeconds *= 2
-                }
-                else {
-                    Write-Error "Maximum retry attempts reached for company $($CodeCVM)"
-                    return $null
-                }
-            }
-            else {
-                Write-Error "Unexpected error for company $($CodeCVM): $errorMessage"
-                return $null
-            }
-        }
-    }
+    return Invoke-B3Request `
+        -BaseUrl "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetDetail" `
+        -Payload @{ codeCVM = $CodeCVM; language = "pt-br" } `
+        -Label "company $CodeCVM"
 }
 
 function Get-FIIDetails {
     param (
-        [string]$IdentifierFund,
-        [int]$MaxRetries = 5,
-        [int]$InitialDelaySeconds = 5
+        [string]$IdentifierFund
     )
 
-    $payload = @{
-        typeFund = 7
-        identifierFund = $IdentifierFund
-    } | ConvertTo-Json
-
-    $base64Payload = ConvertTo-Base64 -JsonString $payload
-
-    $url = "https://sistemaswebb3-listados.b3.com.br/fundsProxy/fundsCall/GetDetailFundSIG/$base64Payload"
-
-    $retryCount = 0
-    $delaySeconds = $InitialDelaySeconds
-
-    while ($retryCount -lt $MaxRetries) {
-        try {
-            $response = Invoke-RestMethod -Uri $url -Method Get
-            
-            if ($null -eq $response) {
-                Write-Warning "Empty response received for FII $($IdentifierFund)"
-                return $null
-            }
-
-            return $response
-        }
-        catch {
-            $errorMessage = $_.Exception.Message
-            Write-Warning "Attempt $($retryCount + 1) of $($MaxRetries) failed for FII $($IdentifierFund): $errorMessage"
-            
-            if ($errorMessage -match "error code: 1015") {
-                $retryCount++
-                if ($retryCount -lt $MaxRetries) {
-                    Write-Host "Rate limit detected. Waiting $($delaySeconds) seconds before retry..."
-                    Start-Sleep -Seconds $delaySeconds
-                    $delaySeconds *= 2
-                }
-                else {
-                    Write-Error "Maximum retry attempts reached for FII $($IdentifierFund)"
-                    return $null
-                }
-            }
-            else {
-                Write-Error "Unexpected error for FII $($IdentifierFund): $errorMessage"
-                return $null
-            }
-        }
-    }
+    return Invoke-B3Request `
+        -BaseUrl "https://sistemaswebb3-listados.b3.com.br/fundsProxy/fundsCall/GetDetailFundSIG" `
+        -Payload @{ typeFund = 7; identifierFund = $IdentifierFund } `
+        -Label "FII $IdentifierFund"
 }
 
 $result = @{}
@@ -207,5 +114,7 @@ foreach ($acronym in $fiis) {
 }
 
 $jsonResult = $result | ConvertTo-Json -Depth 10
-$jsonResult | Out-File -FilePath "b3_companies_and_fiis_details.json" -Encoding UTF8
+# Grava sem BOM para o arquivo poder ser importado direto pelo frontend
+$outputPath = Join-Path (Get-Location) "b3_companies_and_fiis_details.json"
+[System.IO.File]::WriteAllText($outputPath, $jsonResult, [System.Text.UTF8Encoding]::new($false))
 Write-Host "`nResults have been saved to b3_companies_and_fiis_details.json" 

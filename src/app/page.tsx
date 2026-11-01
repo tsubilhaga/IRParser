@@ -4,8 +4,6 @@ import { useState } from "react";
 import { Card, Upload, Button, Typography, Space, Alert, Spin, Input, Tooltip, App } from "antd";
 import { InboxOutlined, FileExcelOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import type { UploadFile } from "antd/es/upload/interface";
-import { processFile, generateExcelFile } from "@/utils/fileProcessor";
-import type { ProcessedData } from "@/utils/fileProcessor";
 
 const { Title, Paragraph, Text, Link } = Typography;
 const { Dragger } = Upload;
@@ -23,11 +21,10 @@ export default function Home() {
 
     setProcessing(true);
     try {
-      const processedData: ProcessedData = {
-        rendimentosTributaveisExclusiva: [],
-        rendimentosIsentos: [],
-        bensEDireitos: [],
-      };
+      // Carregados só aqui para não pesar na abertura da página
+      const { FICHAS, emptyData, processFile, generateExcelFile } = await import("@/utils/fileProcessor");
+      const processedData = emptyData();
+      const failedFiles: UploadFile[] = [];
 
       const userStringsArray = userStrings
         .split("\n")
@@ -38,22 +35,22 @@ export default function Home() {
         if (file.originFileObj) {
           try {
             const result = await processFile(file.originFileObj, userStringsArray);
-            (Object.keys(result) as Array<keyof ProcessedData>).forEach((key) => {
-              if (result[key]) {
-                processedData[key].push(...(result[key] || []));
-              }
-            });
+            FICHAS.forEach(ficha => processedData[ficha].push(...result[ficha]));
+            processedData.avisos.push(...result.avisos);
           } catch (error) {
             console.error(`Error processing file ${file.name}:`, error);
-            message.warning(`Não foi possível processar o arquivo ${file.name}. Verifique se o formato está correto.`);
+            const reason = error instanceof Error ? error.message : "erro desconhecido";
+            failedFiles.push(file);
+            processedData.avisos.push(`Arquivo não processado: ${file.name} (${reason})`);
           }
         }
       }
+      setFileList(failedFiles);
 
-      const hasData = Object.values(processedData).some(array => array.length > 0);
+      const hasData = FICHAS.some(ficha => processedData[ficha].length > 0);
       if (!hasData) {
-        message.warning('Nenhum dado foi extraído dos arquivos. Verifique se os arquivos estão no formato correto ou se as strings para ofuscação não removeram dados importantes.');
-        setProcessing(false);
+        const details = processedData.avisos.join(" ");
+        message.warning(`Nenhum dado foi extraído dos arquivos. Verifique o formato e as strings para ofuscação. ${details}`);
         return;
       }
 
@@ -67,8 +64,14 @@ export default function Home() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
 
-      message.success('Arquivos processados com sucesso!');
-      setFileList([]);
+      const needsReview = FICHAS.some(ficha => processedData[ficha].some(row => row.Conferir));
+      if (failedFiles.length > 0) {
+        message.error(`Excel incompleto. Não foi possível processar: ${failedFiles.map(file => file.name).join(", ")}. Veja o motivo na aba Avisos.`);
+      } else if (needsReview || processedData.avisos.length > 0) {
+        message.warning('Excel gerado com pontos a conferir. Veja a coluna Conferir e a aba Avisos.');
+      } else {
+        message.success('Arquivos processados com sucesso!');
+      }
     } catch (error) {
       console.error("Error processing files:", error);
       message.error('Erro ao processar arquivos. Por favor, tente novamente.');
@@ -104,7 +107,7 @@ export default function Home() {
                     Clique em <b>Ver Resumo</b>
                   </li>
                   <li>
-                    Filtre pelo período de interesse e clique em <b>Filtrar</b>
+                    Filtre desde a sua primeira compra até 31/12 do ano da declaração e clique em <b>Filtrar</b>. Sem o histórico completo, a posição fica errada. Bonificações, desdobramentos e custos não entram no cálculo: ajuste-os no Excel.
                   </li>
                   <li>
                     Clique em <b>Baixar</b> e escolha a opção <b>Arquivo em Excel para ser importado em planilhas</b>
@@ -146,10 +149,11 @@ export default function Home() {
             message="Importante"
             description={
               <>
-                Este aplicativo processa seus documentos PDF e planilhas para extrair dados e gerar um arquivo Excel para sua declaração anual de imposto de renda. Para proteger sua privacidade, informações sensíveis como seu nome e CPF são removidas antes do processamento. Você também pode especificar termos adicionais (por exemplo, outros nomes, CNPJs pessoais, números de agência/conta bancária) para serem omitidos dos documentos, listando-os na caixa de ofuscação abaixo – certifique-se de que estejam escritos exatamente como aparecem em seus arquivos. Evite listar CNPJs de empresas ou FIIs aqui.
+                Este aplicativo processa seus documentos PDF e planilhas para extrair dados e gerar um arquivo Excel para sua declaração anual de imposto de renda. As planilhas são lidas no seu navegador. O texto dos PDFs é enviado a um serviço de IA externo (OpenRouter e o provedor do modelo). Antes do envio, tentamos remover nome, CPF, agência e conta, mas essa remoção automática pode falhar. Liste na caixa abaixo qualquer outro termo a ser omitido (por exemplo, outros nomes, CNPJs pessoais, números de agência/conta bancária), exatamente como aparece nos arquivos. Evite listar CNPJs de empresas ou FIIs aqui.
                 <br />
                 <br />
-                <b>Aviso:</b> Nenhum arquivo enviado ou dado extraído é armazenado por este aplicativo.<br />
+                <b>Aviso:</b> Este aplicativo não armazena arquivos nem dados extraídos, mas não controla o que o serviço de IA externo guarda. Se isso for um problema, envie apenas as planilhas.<br />
+                <b>Confira sempre:</b> os valores são um ponto de partida. Revise a coluna Conferir e a aba Avisos do Excel antes de declarar.<br />
                 <b>Aviso 2:</b> Quanto mais PDFs forem adicionados, mais tempo o processamento levará, em testes locais, um arquivo demorou cerca de 3 minutos para ser processado.
               </>
             }
@@ -187,7 +191,7 @@ Conta 12345-6`}
             fileList={fileList}
             onChange={({ fileList }) => setFileList(fileList)}
             beforeUpload={() => false}
-            accept=".pdf,.xlsx,.xls,.csv"
+            accept=".pdf,.xlsx,.xls"
           >
             <p className="ant-upload-drag-icon">
               <InboxOutlined />
@@ -196,7 +200,7 @@ Conta 12345-6`}
               Clique ou arraste arquivos para esta área para fazer upload
             </p>
             <p className="ant-upload-hint">
-              Suporta upload de múltiplos arquivos. Arquivos PDF, Excel e CSV são aceitos.
+              Suporta upload de múltiplos arquivos. Arquivos PDF e Excel são aceitos.
             </p>
           </Dragger>
 

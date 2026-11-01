@@ -134,3 +134,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Gerados pelos scripts e pelo postinstall
+b3_companies_cvm.txt
+b3_fiis_acronyms.txt
+public/pdf.worker.min.mjs
